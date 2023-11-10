@@ -86,16 +86,6 @@ ggplot(marginal, aes(x = x, y = y)) + geom_line() +
   labs(x = expression(beta[1]), y = "Density") +
   geom_vline(xintercept = 0, col = "black") + theme_bw()
 
-# Podemos calcular la probabilidad de que la SIR supere un valor determinado
-
-marg <- res_inflpoi$marginals.fitted.values[[1]]
-
-1 - inla.pmarginal(q = 2, marginal = marg)
-
-
-exc <- sapply(res_inflpoi$marginals.fitted.values,
-              FUN = function(marg){1 - inla.pmarginal(q = 2, marginal = marg)})
-
 
 # Mapeo de los Riesgos Relativos
 
@@ -182,3 +172,13 @@ mapas <-
   )
 mapas
 
+
+# Podemos calcular la probabilidad de que la SIR supere un valor determinado
+
+marg <- res_inflpoi$marginals.fitted.values[[1]]
+
+1 - inla.pmarginal(q = 2, marginal = marg)
+
+
+exc <- sapply(res_inflpoi$marginals.fitted.values,
+              FUN = function(marg){1 - inla.pmarginal(q = 2, marginal = marg)})
