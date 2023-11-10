@@ -22,7 +22,7 @@ names(inla.models()$likelihood)
 
 #info de funcion de enlace de hyperparametros y otros con 
 
-inla.doc()
+inla.doc("zeroinflatedpoisson")
 
 # Simulamos rapidito ----
 
@@ -42,8 +42,7 @@ summary(gau_lm)
 
 gau <- inla(y ~ x,
      family = "gaussian",
-     data = data#,
-     #control.predictor = list(link = 1)
+     data = data
 )
 
 
@@ -52,6 +51,7 @@ summary(gau)
 
 plot(gau)
 
+# BI_INLA_Cap2 ----
 # Gómez-Rubio, Virgilio (2020). 
 # Bayesian Inference with INLA. Chapman & Hall/CRC Press. Boca Raton, FL.
 # https://becarioprecario.bitbucket.io/inla-gitbook/index.html
@@ -61,13 +61,16 @@ summary(cement)
 
 GGally::ggpairs(cement)
 
-m1_lm <- lm(y ~ x1 + x2 + x3 + x4, data = cement)
+m1_lm <- lm(log(y) ~ x1 + x2 + x3 + x4, data = cement)
 summary(m1_lm)
 
-m1 <- inla(y ~ x1 + x2 + x3 + x4, data = cement
-           ,control.compute = list(config = TRUE))
 
+m1 <- inla(y ~ x1 + x2 + x3 + x4, data = cement
+           ,control.compute = list(config = TRUE, cpo=TRUE))
 summary(m1)
+
+
+m1$summary.fitted.values
 
 m1$cpo
 
@@ -95,8 +98,53 @@ ggplot(tab, aes(x = prec)) +
   xlim(0, 0.8)
 
 
+# ts_Thimothy E.Moore ----
+# https://tem11010.github.io/timeseries-inla/
 
+#el conjunto de datos 'greatLakes' del paquete DAAG. 
+#Se trata de un conjunto de datos de promedios anuales del nivel del agua
+#de los Grandes Lagos (Erie, Míchigan/Huron, Ontario y St. Clair) 
+#desde 1918 hasta 2009. Las obs se almacenan como una serie temporal multivariada.
 
+require(INLA)
+library(DAAG)
+
+lakes <- greatLakes
+
+head(greatLakes)
+
+plot(lakes)
+
+class(lakes)
+
+lakes.df <- data.frame(as.matrix(lakes), year = time(lakes))
+
+values <- lakes.df["Erie"]
+
+plot(lakes_decomp)
+
+#Debido a que tenemos datos de series temporales 
+#a intervalos regulares, podemos utilizar un modelo 
+#de caminata aleatoria de orden 2 (RW2). 
+# Según Zuur et al., estos modelos generan una tendencia más suavizada RW1.
+
+i1 <-
+  inla(
+    Erie ~ f(year, model = "rw2"),
+    control.compute = list(dic = TRUE),
+    verbose = TRUE,
+    family = "gaussian", data = lakes.df)
+
+lakes.df.pred <- bind_cols(lakes.df,
+                           as.data.frame((i1$summary.fitted.values)))
+
+lakes.df.pred |> ggplot(aes(x=year,y=Erie))+
+  geom_point()+
+  geom_line(aes(x = year, y = mean))+
+  geom_ribbon(aes(x = year, ymin = `0.025quant`, ymax = `0.975quant`), alpha = 0.2)+
+  xlab("Year")+
+  ylab("Lake Height")+
+  theme_bw()
 
 
 
