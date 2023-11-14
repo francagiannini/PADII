@@ -1,0 +1,5 @@
+SOURCE: Data from book by Fahrmeir and Kneib. 
+
+URL: http://www.uni-goettingen.de/de/551628.html
+
+DESC: Temperature reconstruction.
