@@ -14,22 +14,20 @@ datos <- st_read("datos/Base_07_07_radios.gpkg", quiet = TRUE)
 datos$E <- datos$Poblacion * sum(datos$Casos) / sum(datos$Poblacion)
 
 tm_shape(datos) +
-  tm_polygons(fill = 'E')
+  tm_polygons(col = 'E')
 
 # Cálculo de cociente de infección estandarizada 
 #(Standardized Infection Ratio, SIR) por radio censal
 
 datos$SIR <- datos$Casos / datos$E
 
-
 tm_shape(datos) +
-  tm_polygons(fill = 'SIR')
+  tm_polygons(col = 'SIR')
 
 # Definimos la referencias para el efecto aleatorio y el término del error
 
 datos$re_u <- 1:nrow(datos)
 datos$re_v <- 1:nrow(datos)
-
 
 # Generación de lista con vecindarios
 nb <- poly2nb(datos)
@@ -49,11 +47,13 @@ plot(
 
 # Generación de vecindarios para INLA
 file_adj <- tempfile("map.adj1")
+
 nb2INLA(file_adj, nb)
+
 g <- inla.read.graph(filename = file_adj)
 
 # Ajuste del Modelo inflado en ceros
-summary(datos)
+#summary(datos)
 
 formula  <-
   Casos ~ 
@@ -175,10 +175,9 @@ mapas
 
 # Podemos calcular la probabilidad de que la SIR supere un valor determinado
 
-marg <- res_inflpoi$marginals.fitted.values[[1]]
+marg <- res_inflpoi$marginals.fitted.values[[13]]
 
 1 - inla.pmarginal(q = 2, marginal = marg)
-
 
 exc <- sapply(res_inflpoi$marginals.fitted.values,
               FUN = function(marg){1 - inla.pmarginal(q = 2, marginal = marg)})

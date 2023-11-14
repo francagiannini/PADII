@@ -1,29 +1,54 @@
+library(tidyverse)
 library(nlme)
-library(dplyr)
-library(ggplot2)
 library(sf)
 library(tmap)
 library(INLA)
 library(inlabru)
 
-climate <- read.table(file = "data/moberg2005.raw.txt", header = TRUE)
+# Cap # Bayesian inference with INLA
+# Gómez-Rubio 2021
+
+theme_set(theme_bw())
+theme_update(panel.grid = element_blank())
+
+# Anomalias en la temperatura en grados C, en el emisferio Norte
+
+climate <- read.table(file = "datos/moberg2005.raw.txt", header = TRUE)
 summary(climate)
 
-library("ggplot2")
-ggplot(climate, aes(x = year, y = temp)) +
+climate |> ggplot(aes(x = year, y = temp)) +
   geom_line() +
   xlab("Year") +
   ylab(expression('Temperature ('*degree*'C)'))
 
 
 climate.ar1 <- inla(temp ~ 1 + f(year, model = "ar1"), data = climate,
-  control.predictor = list(compute = TRUE)
+  control.predictor = list(compute = TRUE),
+  control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE)
 )
 summary(climate.ar1)
 
+climate$pred_ar_of<- climate.ar1$summary.fitted.values$mean
+
+climate |> ggplot(aes(x = temp, y = pred_ar_of)) +
+  geom_point()+
+  geom_abline(slope = 1)
+ 
+##sobreajusta los datos
+#es necesario proporcionar  información previa sobre lo que esperamos 
+#que sea la variación del proceso. 
+#En el próximo ejemplo se utiliza una priori Gamma con parámetros 10 y 100, 
+#de manera que la precisión esté centrada en 0.1 y tenga una pequeña varianza de
+#0.001
+#esta priori está más cerca de la escala de los datos reales que la priori predeterminada, 
+#ya que la varianza de "temp" es 0.0484. 
+#La priori se establece utilizando el argumento "hyper" dentro de la función "f()" 
+#donde se define el efecto latente "ar1" 
+#y en el argumento "control.family" (para la precisión de la verosimilitud).
+
 
 climate.ar1 <- inla(temp ~ 1 + f(year, model = "ar1", 
-    hyper = list(prec = list(param = c(10, 100)))), data = climate,
+  hyper = list(prec = list(param = c(10, 100)))), data = climate,
   control.predictor = list(compute = TRUE),
   control.compute = list(dic = TRUE, waic = TRUE, cpo = TRUE),
   control.family = list(hyper = list(prec = list(param = c(10, 100))))
@@ -62,20 +87,30 @@ p2 <- ggplot(climate, aes(x = year, y = temp)) +
   xlab("Year") +
   ylab(expression('Temperature ('*degree*'C)')) +
   geom_line(aes(x = x, y = y), linetype = 1, col = "red", data = tab.rw1) +
-  geom_ribbon(aes(x = x, y = y, ymin = ll95, ymax = ul95), alpha = 0.75, data = tab.rw1) +
+  geom_ribbon(aes(x = x, y = y, ymin = ll95, ymax = ul95), alpha = 0.5, data = tab.rw1) +
   ggtitle("Random walk of order 1")
 
 library("gridExtra")
 grid.arrange(p1, p2, nrow = 2)
 
 
+#Para ambos modelos se han calculado el AIC y WAIC, 
+#y claramente favorecen al modelo ar1 (rw1 tmb sobreajusta los datos). 
+# Veamos CPO y comparemos.
+
+
 # ar1
 - sum(log(climate.ar1$cpo$cpo))
+
 # rw1
 - sum(log(climate.rw1$cpo$cpo))
 
-library("MixtureInf")
-data(earthquake)
+
+# Terremotos para datos no normales 
+# contiene el número de terremotos grandes 
+#(de magnitud 7 o mayor) en el mundo desde 1900 hasta 2006
+
+load(file ="datos/earthquake.rda" )
 
 #Add year
 earthquake$year <- 1900:2006
@@ -86,7 +121,7 @@ summary(earthquake)
 
 #"earthquake"
 
-ggplot(earthquake, aes(x = year, y = number)) + 
+earthquake |> ggplot(aes(x = year, y = number)) + 
   geom_line() + xlab("Year") + ylab("Number of major earthquakes")
 
 quake.ar1 <- inla(number ~ 1 + f(year, model = "ar1"), data = earthquake,
@@ -96,7 +131,6 @@ summary(quake.ar1)
 quake.rw1 <- inla(number ~ 1 + f(year, model = "rw1"), data = earthquake,
   family = "poisson", control.predictor = list(compute = TRUE))
 summary(quake.rw1)
-
 
 tab.ar1 <- data.frame(x = earthquake$year,
   y = quake.ar1$summary.fitted.values[, "mean"],
@@ -128,10 +162,9 @@ p2 <- ggplot(earthquake, aes(x = year, y = number)) +
 library("gridExtra")
 grid.arrange(p1, p2, nrow = 2)
 
-
+# Pronostico :)
 quake.pred <- rbind(earthquake, 
   data.frame(number = rep(NA, 14), year = 2007:2020))
-
 
 
 quake.ar1.pred <- inla(number ~ 1 + f(year, model = "ar1"), data = quake.pred,
@@ -165,13 +198,32 @@ ggplot(earthquake, aes(x = year, y = number)) +
 library("KFAS")
 data(alcohol)
 
+summary(alcohol)
+
+
+# los datos deben organizarse en una matriz de dos columnas, 
+# ya que el modelo contendrá dos verosimilitudes, 
+# En la primera columna, incluiremos el número de muertes 
+#en el grupo de edad de 30 a 39 años, y en la segunda columna las "observaciones falsas cero". 
+
 n <- nrow(alcohol) - 1 #There is an NA
 Y <- matrix(NA, ncol = 2, nrow = n + (n - 1))
 Y[1:n, 1] <- alcohol[1:n, 1]
 Y[-c(1:n), 2] <- 0
 
-#offset
+# offset
 oset <- c(alcohol[1:n, 5], rep(NA, n - 1))
+
+# se deben crear una serie de índices y pesos para el efecto latente, 
+# los cuales se describen en la formulación del modelo  
+# todos los índices tienen una longitud de n+n+1
+# porque modelo estará compuesto por dos verosimilitudes. 
+# La primera es una verosimilitud de Poisson para modelar la respuesta y 
+# la segunda es una verosimilitud gaussiana para modelar los "falsos ceros" 
+# latentes que definen la variable x_t
+# Cuando un índice solo afecta a una verosimilitud, 
+# entonces los valores correspondientes para la otra verosimilitud se establecerán como NA.
+
 
 #x_t
 i <- c(1:n, 2:n)
@@ -186,6 +238,7 @@ w2 <- c(rep(NA, n), rep(-1, n - 1))
 
 
 prec.prior <- list(prec = list(param = c(0.001, 0.001)))
+
 alc.inla <- inla(Y ~ 0 + offset(log(oset)) +
     f(i, model = "iid",
       hyper = list(prec = list(initial = -10, fixed = TRUE))) +
@@ -195,7 +248,6 @@ alc.inla <- inla(Y ~ 0 + offset(log(oset)) +
     list(hyper = list(prec = list(initial = 10, fixed = TRUE)))),
   control.predictor = list(compute = TRUE)
 )
-
 
 summary(alc.inla)
 
@@ -211,70 +263,4 @@ ggplot(tab.alc, aes(x = x, y = deaths)) +
   ylab("Number of deaths")+
   geom_line(aes(x = x, y = pred), linetype = 1, col = "blue") +
   geom_ribbon(aes(x = x, y = pred, ymin = ll95, ymax = ul95), alpha = 0.75)
-
-
-library("DClusterm")
-data(brainNM)
-
-
-# "Standardized Mortality Ratio (SMR) of brain cancer in New Mexico from 1973 to 1991."
-library("viridis")
-library("spacetime")
-
-splitvalues <- function(xx) {
-  res <- cut(xx, c(0, 0.5, 0.8, 1.0, 1.2, 1.5, Inf), include.lowest = TRUE)
-  levels(res) <- c("0.0 - 0.5", "0.5 - 0.8", "0.8 - 1.0", "1.0 - 1.2",
-     "1.2 - 1.5", "1.5+")
-  return(res)
-}
-
-brainst@data$SMRcat <- splitvalues(brainst@data$SMR)
-stplot(brainst[, , "SMRcat"], col.regions = hcl.colors(6, "Blue-Red"),
-  names.attr = 1973:1991, 
-  main = "Standardized mortality ratio")
-
-
-nm.adj <- poly2nb(brainst@sp)
-adj.mat <- as(nb2mat(nm.adj, style = "B"), "Matrix")
-
-# Prior of precision
-prec.prior <- list(prec = list(param = c(0.001, 0.001)))
-
-brain.st <- inla(Observed ~ 1 + f(Year, model = "rw1",
-      hyper = prec.prior) + 
-    f(as.numeric(ID), model = "besag", graph = adj.mat,
-      hyper = prec.prior),
-  data = brainst@data, E = Expected, family = "poisson",
-  control.predictor = list(compute = TRUE, link = 1))
-summary(brain.st)
-
-
-brainst@data$RR <- brain.st$summary.fitted.values[ , "mean"] 
-
-stplot(brainst[, , "RR"], col.regions = rev(magma(32)), 
-  names.attr = 1973:1991, at = seq(0.75, 1.25, length.out = 32),
-  main = "Relative risk estimates")
-
-names(inla.models()$group)
-
-
-brainst@data$ID.Year <- brainst@data$Year - 1973 + 1
-brainst@data$ID2 <- brainst@data$ID
-
-
-brain.st2 <- inla(Observed ~ 1 + 
-    f(as.numeric(ID2), model = "besag", graph = adj.mat,
-      group = ID.Year, control.group = list(model = "ar1"),
-        hyper = prec.prior),
-  data = brainst@data, E = Expected, family = "poisson",
-  control.predictor = list(compute = TRUE, link = 1))
-summary(brain.st2)
-
-
-brainst@data$RRgroup <- brain.st2$summary.fitted.values[ , "mean"]
-
-#brainst@data$RRgroupcat <- splitvalues(brainst@data$RRgroup)
-stplot(brainst[, , "RRgroup"], col.regions = rev(magma(32)),
-  names.attr = 1973:1991, at = seq(0.75, 1.25, length.out = 32),
-  main = "Relative risk estimates")
 

@@ -16,15 +16,14 @@ datos_sf <-
 
 tmap_mode('view')
 
+tm_shape(datos_sf) +
+  tm_dots(col  = 'COS',
+          #fill.scale = tm_scale(values = "carto.ag_grn_yl"),
+          size = 0.1)
 
 tm_shape(datos_sf) +
-  tm_dots(fill = 'COS',
-          fill.scale = tm_scale_continuous(values = "carto.ag_grn_yl"),
-          size = 0.5)
-
-tm_shape(datos_sf) +
-  tm_dots(fill = 'elevacion',
-          size = 0.5)
+  tm_dots(col = 'elevacion',
+          size = 0.1)
 
 
 datos |> ggplot(aes(COS)) +
@@ -33,16 +32,18 @@ datos |> ggplot(aes(COS)) +
 
 
 ggplot(datos, aes(COS, arcilla)) +
-  geom_point()
+  geom_point()+
+  geom_smooth()
 
 
-pred_cos_gls <- gls(COS ~ elevacion+ twi+ arcilla + pH , 
+cos_gls <- gls(COS ~ elevacion+ twi+ arcilla + pH , 
                    data = datos, 
                    method = 'REML')
+
 summary(cos_gls)
 
 
-pred_cos_gls_corr <- gls(
+cos_gls_corr <- gls(
   COS ~ elevacion+ twi+ arcilla + pH ,
   correlation = corExp(
     form =  ~ as.numeric(as.character(X)) + 
@@ -53,12 +54,13 @@ pred_cos_gls_corr <- gls(
   data = datos,
   method = 'REML'
 )
-summary(pred_cos_gls_corr)
+
+summary(cos_gls_corr)
 
 
 predichos_lm <- datos
 predichos_lm$pred_cos_gls <- predict(cos_gls)
-predichos_lm$pred_cos_gls_corr <- predict(pred_cos_gls_corr)
+predichos_lm$pred_cos_gls_corr <- predict(cos_gls_corr)
 
 
 predichos_lm |> ggplot(aes(pred_cos_gls, COS)) +
@@ -70,10 +72,7 @@ predichos_lm |> ggplot(aes(pred_cos_gls_corr, COS)) +
   geom_abline(slope = 1, intercept = 0)
 
 
-
 inla.setOption(inla.mode = 'experimental')
-
-
 
 # generacion-grilla-inla
 
@@ -93,7 +92,7 @@ ggplot(datos_sf) +
 
 spde <- INLA::inla.spde2.pcmatern(
   mesh = mesh,
-  prior.range = c(25000, 0.01),
+  prior.range = c(20000, 2),
   prior.sigma = c(2, 0.01)
 )
 
@@ -124,7 +123,8 @@ multiplot(plot(covplot), plot(corplot),
 
 pred_mesh <-
   predict(cos_bru_spde, 
-          as_Spatial(datos_sf), ~ Intercept + elevacion + twi + arcilla + pH + site)
+          as_Spatial(datos_sf), ~ Intercept + elevacion + twi + arcilla + pH + site
+          )
 predichos <- st_as_sf(pred_mesh)
 
 ggplot(predichos, aes(mean, COS)) +
